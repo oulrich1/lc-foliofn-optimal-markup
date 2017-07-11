@@ -1,0 +1,31 @@
+{
+  "name": "lc-foliofn-optimal-markup",
+  "version": "1.0.0",
+  "description": "happy middle ground for buyer and seller on foliofn, currently only supports sells",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oulrich1/lc-foliofn-optimal-markup.git"
+  },
+  "keywords": [
+    "lendingclub",
+    "foliofn",
+    "client"
+  ],
+  "author": "oulrich1",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/oulrich1/lc-foliofn-optimal-markup/issues"
+  },
+  "homepage": "https://github.com/oulrich1/lc-foliofn-optimal-markup#readme",
+  "dependencies": {
+    "cli-table": "^0.3.1",
+    "dateformat": "^2.0.0",
+    "newton-raphson": "0.0.3",
+    "request": "^2.81.0",
+    "simple-rate-limiter": "^0.2.3"
+  }
+}
