@@ -122,7 +122,20 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
 }
 
 
+// https://www.lendingclub.com/foliofn/folioInvestingAPIDocument.action
 const client = {
+
+  buyNotes : function(notesToBuy) {
+    lc.folio.buy(investorId, notesToBuy,
+      function(err, ret) {
+        if (err) {
+          console.log('Error: ' + err);
+          return;
+        }
+        console.log(ret);
+    });
+  },
+
   // param notesToSell is an array of objects containing:
   //   objects that follow the foliofn sell schema
   sellNotes : function(notesToSell) {
@@ -153,8 +166,6 @@ const client = {
     } ];
     sellNotes(notesToSell);
   }
-
-  // TODO: buy notes?
 };
 
 // creates an array of objects that follow the foliofn
@@ -207,7 +218,7 @@ class NoteCollection {
   };
 }
 
-function filterSellableNotes(theNotes, acceptableYTM) {
+function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
   let notesToSell = [];
   const table = new Table({
     head : [
@@ -223,7 +234,6 @@ function filterSellableNotes(theNotes, acceptableYTM) {
 
     const monthlyPayment = calcMonthlyPayment(theNote.principalPending, 12,
                                               theNote.interestRate / 100 / 12);
-    // console.log('Monthly Payment: ' + monthlyPayment);
 
     let params = {
       monthlyPayment : monthlyPayment,
@@ -231,13 +241,11 @@ function filterSellableNotes(theNotes, acceptableYTM) {
       askPrice : calcAskingPrice(theNote, initialMarkup)
     };
     let initialYTM = calcYield(params);
-    // console.log('Initial YTM: ' + initialYTM);
 
     /* Finds the markup such that we reach an acceptable YTM for that markup
     * */
     let markup = calcOptimalMarkup(theNote, initialMarkup, acceptableYTM);
-    if (markup) {
-      // console.log('Optimal Markup: ' + markup);
+    if (markup && markup > acceptableMarkup) {
       const askPrice = calcAskingPrice(theNote, markup);
       params = {
         monthlyPayment : monthlyPayment,
@@ -245,8 +253,6 @@ function filterSellableNotes(theNotes, acceptableYTM) {
         askPrice : askPrice
       };
       let finalYTM = calcYield(params);
-      // console.log('Final YTM: ' + finalYTM);
-      // console.log(' askPrice: ' + askPrice);
 
       if (askPrice >= theNote.principalPending) {
         notesToSell.push({
@@ -254,9 +260,6 @@ function filterSellableNotes(theNotes, acceptableYTM) {
           askPrice : askPrice,
         });
 
-        // TODO: clean this up, works for my purposes of
-        //       debugging but kind of messy to have in
-        //       this function.
         const viewObject = [
           theNote.noteId,
           initialMarkup,
@@ -300,7 +303,8 @@ lc.accounts.detailedNotes(investorId, function(err, ret) {
   // filter out the ones that should not be sold
   // keep a list of notes to sell with optimal askPrice
   let acceptableYTM = 0.0595;
-  let sellable = filterSellableNotes(creditNotes, acceptableYTM);
+  let acceptableMarkup = 0.04;
+  let sellable = filterSellableNotes(creditNotes, acceptableYTM, acceptableMarkup);
   let notesToSell = sellable.notesToSell;
   let table = sellable.table;
 
