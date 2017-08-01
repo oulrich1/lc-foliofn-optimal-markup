@@ -15,12 +15,11 @@ see these ones: https://github.com/bryansh/lendingClubAPI
 * simple-rate-limiter
 * node-lending-club-api
 
-### Notice
-if node-lending-club-api has not been updated
-   with foliofn endpoints, then just copy the 
-   'index.js' file from this repo into your 
-   project and 'require' the file.
+## Usage
+
+Create a json config file named 'production.json' under ./config/.
 
 ````
-https://github.com/oulrich1/lendingClubAPI
+export NODE_ENV=production
+node main.js
 ````
