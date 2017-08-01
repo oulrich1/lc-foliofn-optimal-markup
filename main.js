@@ -6,13 +6,11 @@ const Table = require('cli-table');
 const dateFormat = require('dateformat');
 const findRoot = require('newton-raphson');
 const extend = require('util')._extend;
-
-// https://github.com/bryansh/lendingClubAPI
-// + https://github.com/oulrich1/lendingClubAPI
 const lc = require('node-lending-club-api');
-lc.init({ apiKey: '' });
-const investorId = '';
+const config = require('config');
 
+lc.init({ apiKey: config.get('investor.apiKey') });
+const investorId = config.get('investor.id');
 
 function getMaxExpirationDate() {
   const days = 7;
