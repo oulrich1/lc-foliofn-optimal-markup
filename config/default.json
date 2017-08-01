@@ -3,5 +3,10 @@
   {
     "apiKey": "",
     "id": ""
+  },
+  "transaction":
+  {
+    "acceptableYTM": 0.1595,
+    "acceptableMarkup": 0.0115
   }
 }

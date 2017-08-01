@@ -292,16 +292,14 @@ lc.accounts.detailedNotes(investorId, function(err, ret) {
   }
 
   const notes = new NoteCollection(ret.myNotes);
-
   // const theNotes = notes.byPurpose('Credit card refinancing');
   // const theNotes = notes.byLoanStatus('Late (31-120 days)');
   const theNotes = notes.notes;
 
-  // filter out the ones that should not be sold
-  // keep a list of notes to sell with optimal askPrice
-  let acceptableYTM = 0.0595;
-  let acceptableMarkup = 0.011;
-  let sellable = filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup);
+  let sellable =
+      filterSellableNotes(theNotes,
+                          config.get('transaction.acceptableYTM'),
+                          config.get('transaction.acceptableMarkup'));
   let notesToSell = sellable.notesToSell;
   let table = sellable.table;
 
