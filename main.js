@@ -284,7 +284,6 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
 //
 // This is an example:
 //
-
 lc.accounts.detailedNotes(investorId, function(err, ret) {
   if (err) {
     console.log('error: ' + err);
@@ -295,6 +294,8 @@ lc.accounts.detailedNotes(investorId, function(err, ret) {
   // const theNotes = notes.byPurpose('Credit card refinancing');
   // const theNotes = notes.byLoanStatus('Late (31-120 days)');
   const theNotes = notes.notes;
+  // const theNote = notes.byId(noteId);
+  // console.log('NOTE: %j', theNote);
 
   let sellable =
       filterSellableNotes(theNotes,
@@ -308,13 +309,3 @@ lc.accounts.detailedNotes(investorId, function(err, ret) {
   let foliofnSellNotes = convertNotesToFolioSellSchema(notesToSell);
   // client.sellNotes(foliofnSellNotes);
 });
-
-
-
-  /* * * * * * * * * * * *
-   * Determine what a basic note looks like
-  */
-  /*
-  const theNote = notes.byId(noteId);
-  console.log('NOTE: %j', theNote);
-  */
