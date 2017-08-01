@@ -14,6 +14,7 @@ see these ones: https://github.com/bryansh/lendingClubAPI
 * request
 * simple-rate-limiter
 * node-lending-club-api
+* config
 
 ## Usage
 
