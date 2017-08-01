@@ -23,6 +23,7 @@
   "homepage": "https://github.com/oulrich1/lc-foliofn-optimal-markup#readme",
   "dependencies": {
     "cli-table": "^0.3.1",
+    "config": "^1.26.1",
     "dateformat": "^2.0.0",
     "newton-raphson": "0.0.3",
     "node-lending-club-api": "^1.0.13",
