@@ -228,7 +228,7 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
   const arrayLength = theNotes.length;
   for (let i = 0; i < arrayLength; i++) {
     const theNote = theNotes[i];
-    const initialMarkup = 0.011;
+    const initialMarkup = 0.009;
 
     const monthlyPayment = calcMonthlyPayment(theNote.principalPending, 12,
                                               theNote.interestRate / 100 / 12);
@@ -293,16 +293,15 @@ lc.accounts.detailedNotes(investorId, function(err, ret) {
 
   const notes = new NoteCollection(ret.myNotes);
 
-  /*
-    * purpose: 'Credit card refinancing'
-    * */
-  const creditNotes = notes.byPurpose('Credit card refinancing');
+  // const theNotes = notes.byPurpose('Credit card refinancing');
+  // const theNotes = notes.byLoanStatus('Late (31-120 days)');
+  const theNotes = notes.notes;
 
   // filter out the ones that should not be sold
   // keep a list of notes to sell with optimal askPrice
   let acceptableYTM = 0.0595;
-  let acceptableMarkup = 0.04;
-  let sellable = filterSellableNotes(creditNotes, acceptableYTM, acceptableMarkup);
+  let acceptableMarkup = 0.011;
+  let sellable = filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup);
   let notesToSell = sellable.notesToSell;
   let table = sellable.table;
 
@@ -310,22 +309,6 @@ lc.accounts.detailedNotes(investorId, function(err, ret) {
   console.log('Selling %d notes...', notesToSell.length);
   let foliofnSellNotes = convertNotesToFolioSellSchema(notesToSell);
   // client.sellNotes(foliofnSellNotes);
-
-
-  /*
-   *  loanStatus: 'Late (16-30 days)'
-   *  loanStatus: 'Late (31-120 days)'
-    * */
-  // const lateNotes = notes.byLoanStatus('Late (31-120 days)');
-
-  // acceptableYTM = 0.0695;
-  // sellable = filterSellableNotes(lateNotes, acceptableYTM);
-  // notesToSell = sellable.notesToSell;
-  // table = sellable.table;
-
-  // console.log(table.toString());
-  // console.log('Selling %d notes...', notesToSell.length);
-  // foliofnSellNotes = convertNotesToFolioSellSchema(notesToSell);
 });
 
 
