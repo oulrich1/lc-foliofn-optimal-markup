@@ -8,6 +8,7 @@ const findRoot = require('newton-raphson');
 const extend = require('util')._extend;
 const lc = require('node-lending-club-api');
 const config = require('config');
+const async = require('async');
 
 lc.init({ apiKey: config.get('investor.apiKey') });
 const investorId = config.get('investor.id');
@@ -17,6 +18,19 @@ function getMaxExpirationDate() {
   var now = new Date();
   now.setDate(now.getDate() + days);
   return dateFormat(now, "mm/dd/yyyy");
+}
+
+function Seconds(n) {
+  return n * 1000;
+}
+function Minutes(n) {
+  return n * Seconds(60);
+}
+function Hours(n) {
+  return n * Minutes(60);
+}
+function Days(n) {
+  return n * Hours(24);
 }
 
 // https://stackoverflow.com/questions/11832914/round-to-at-most-2-decimal-places-only-if-necessary
@@ -284,28 +298,96 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
 //
 // This is an example:
 //
-lc.accounts.detailedNotes(investorId, function(err, ret) {
-  if (err) {
-    console.log('error: ' + err);
-    return;
+
+const sellSomeNotes = function() {
+  lc.accounts.detailedNotes(investorId, function(err, ret) {
+    if (err) {
+      console.log('error: ' + err);
+      return;
+    }
+
+    const notes = new NoteCollection(ret.myNotes);
+    // const theNotes = notes.byPurpose('Credit card refinancing');
+    // const theNotes = notes.byLoanStatus('Late (31-120 days)');
+    const theNotes = notes.notes;
+    // const theNote = notes.byId(noteId);
+    // console.log('NOTE: %j', theNote);
+
+    let sellable =
+        filterSellableNotes(theNotes,
+                            config.get('transaction.acceptableYTM'),
+                            config.get('transaction.acceptableMarkup'));
+    let notesToSell = sellable.notesToSell;
+    let table = sellable.table;
+
+    // console.log(table.toString());
+    console.log('Selling %d notes...', notesToSell.length);
+    let foliofnSellNotes = convertNotesToFolioSellSchema(notesToSell);
+    client.sellNotes(foliofnSellNotes);
+  });
+};
+
+const withdrawFunds = function(cash) {
+  console.log("Going to Withdraw: " + cash);
+  const now = new Date();
+  const estimatedFundsTransferStartDate = dateFormat(now, "mm/dd/yyyy");
+  lc.accounts.funds.withdraw(investorId, cash, estimatedFundsTransferStartDate,
+                               function(err, ret) {
+    if (err) {
+      console.log('error: ' + JSON.stringify(err));
+      return;
+    }
+    console.log(JSON.stringify(ret));
+  });
+};
+
+const getAvailableFunds = function(cb) {
+  lc.accounts.summary(investorId, (err, ret) => {
+    if (err) {
+      console.log('error: ' + JSON.stringify(err));
+      return;
+    }
+    console.log("> " + JSON.stringify(ret));
+    cb(ret.availableCash);
+  });
+};
+
+
+/* = = = = = = = = = = = = = = = = = = = */
+
+const sellPollHandler = function() {
+  // see settings in ./config/*.json
+  console.log("> sellPollHandler");
+  sellSomeNotes();
+};
+const sellPoller = function() {
+  console.log("Selling... every 3 days");
+  sellPollHandler();
+  setInterval(sellPollHandler, Days(3));
+};
+
+const withdrawPollHandler = function() {
+  console.log("> withdrawPollHandler");
+  getAvailableFunds((cash) => {
+    if (cash > 150) {
+      withdrawFunds(cash);
+    }
+  });
+};
+const withdrawPoller = function() {
+  console.log("Withdrawing... every 12 hours");
+  withdrawPollHandler();
+  setInterval(withdrawPollHandler, Hours(24));
+};
+
+
+/* = = = = = = = = = = = = = = = = = = = */
+sellPoller();
+withdrawPoller();
+async function loop() {
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
+  await sleep(Hours(6)).then(loop);
+}
 
-  const notes = new NoteCollection(ret.myNotes);
-  // const theNotes = notes.byPurpose('Credit card refinancing');
-  // const theNotes = notes.byLoanStatus('Late (31-120 days)');
-  const theNotes = notes.notes;
-  // const theNote = notes.byId(noteId);
-  // console.log('NOTE: %j', theNote);
-
-  let sellable =
-      filterSellableNotes(theNotes,
-                          config.get('transaction.acceptableYTM'),
-                          config.get('transaction.acceptableMarkup'));
-  let notesToSell = sellable.notesToSell;
-  let table = sellable.table;
-
-  console.log(table.toString());
-  console.log('Selling %d notes...', notesToSell.length);
-  let foliofnSellNotes = convertNotesToFolioSellSchema(notesToSell);
-  // client.sellNotes(foliofnSellNotes);
-});
