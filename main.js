@@ -9,8 +9,12 @@ const extend = require('util')._extend;
 const lc = require('node-lending-club-api');
 const config = require('config');
 const async = require('async');
+const os = require('os');
 
-lc.init({ apiKey: config.get('investor.apiKey') });
+
+lc.init({
+  apiKey: config.get('investor.apiKey')
+});
 const investorId = config.get('investor.id');
 
 function getMaxExpirationDate() {
@@ -23,12 +27,15 @@ function getMaxExpirationDate() {
 function Seconds(n) {
   return n * 1000;
 }
+
 function Minutes(n) {
   return n * Seconds(60);
 }
+
 function Hours(n) {
   return n * Minutes(60);
 }
+
 function Days(n) {
   return n * Hours(24);
 }
@@ -44,19 +51,19 @@ function roundNumber(num, scale) {
       sig = "+";
     }
     return +(Math.round(+arr[0] + "e" + sig + (+arr[1] + scale)) + "e-" +
-             scale);
+      scale);
   }
 }
 
 // interest rate per payment is interest rate / yearly payments
 // ie: APR 15% and 12 Payments (monthly payments) -> 15% / 12 => 0.15/12
 function calcMonthlyPayment(principal, remainingPayments,
-                            interestRatePerPayment) {
+  interestRatePerPayment) {
   // http://forum.lendacademy.com/index.php?topic=4192.0
   const p = principal;
   const n = remainingPayments;
   const r = interestRatePerPayment;
-  return p*((r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1));
+  return p * ((r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
 }
 
 // calculates the YIELD TO MATURITY given the ask price
@@ -66,18 +73,18 @@ function calcMonthlyPayment(principal, remainingPayments,
 // //
 function calcYield(params) {
   const m = params.monthlyPayment;
-    // in dollars, this is directly calculated from
-    // the actual principalPending (not askingPrice)
+  // in dollars, this is directly calculated from
+  // the actual principalPending (not askingPrice)
 
-  const n = params.remainingPayments;  // number of remaining payments
-  const pr = params.askPrice;          // maybe or not the same as principalPending
+  const n = params.remainingPayments; // number of remaining payments
+  const pr = params.askPrice; // maybe or not the same as principalPending
 
   const f = function(r) {
-    return m - calcMonthlyPayment(pr,n,r);
+    return m - calcMonthlyPayment(pr, n, r);
   };
   const fprime = function(r) {
     const h = 0.001; // almost forgot the h again..
-    return (f(r+h,m,pr,n)-f(r,m,pr,n))/h;
+    return (f(r + h, m, pr, n) - f(r, m, pr, n)) / h;
   };
 
   const initialRateGuesstimate = 1.0;
@@ -86,7 +93,7 @@ function calcYield(params) {
 
 function calcAskingPrice(theNote, markup) {
   const principalPlusIntrest =
-      theNote.principalPending + theNote.accruedInterest;
+    theNote.principalPending + theNote.accruedInterest;
   return principalPlusIntrest * (markup + 1);
 }
 
@@ -101,6 +108,7 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
   function isValidMarkup(markup) {
     return (markup > 0.01 && markup < 0.7);
   }
+
   function isValidYTM(ytm) {
     return ytm > 0.0495; // is good for the buyer
   }
@@ -109,23 +117,23 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
   const remainingPayments = 12; // calcRemainingPayments(theNote.loanLength, theNote.dateIssued);
   const interestRate = theNote.interestRate / 100 / 12;
   let params = {
-    monthlyPayment : calcMonthlyPayment(theNote.principalPending,
-                                        remainingPayments, interestRate),
-    remainingPayments : remainingPayments,
-    askPrice : initialAskPrice
+    monthlyPayment: calcMonthlyPayment(theNote.principalPending,
+      remainingPayments, interestRate),
+    remainingPayments: remainingPayments,
+    askPrice: initialAskPrice
   };
 
   const g = function(markup) {
     let paramsCopy = extend({}, params);
     paramsCopy.askPrice = calcAskingPrice(theNote, markup);
-    const val =  acceptableYTM - calcYield(paramsCopy);
+    const val = acceptableYTM - calcYield(paramsCopy);
     // console.log('g  : ' + val);
     return val;
   };
 
   const gprime = function(markup) {
     const h = 0.001; // almost forgot the h again..
-    const delta = (g(markup+h) - g(markup)) / h;
+    const delta = (g(markup + h) - g(markup)) / h;
     // console.log('g` : ' + delta);
     return delta;
   };
@@ -137,7 +145,7 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
 // https://www.lendingclub.com/foliofn/folioInvestingAPIDocument.action
 const client = {
 
-  buyNotes : function(notesToBuy) {
+  buyNotes: function(notesToBuy) {
     lc.folio.buy(investorId, notesToBuy,
       function(err, ret) {
         if (err) {
@@ -145,12 +153,12 @@ const client = {
           return;
         }
         console.log(ret);
-    });
+      });
   },
 
   // param notesToSell is an array of objects containing:
   //   objects that follow the foliofn sell schema
-  sellNotes : function(notesToSell) {
+  sellNotes: function(notesToSell) {
     lc.folio.sell(investorId, getMaxExpirationDate(), notesToSell,
       function(err, ret) {
         if (err) {
@@ -158,24 +166,24 @@ const client = {
           return;
         }
         console.log(ret);
-    });
+      });
   },
 
   // Sells one note at a markup on foliofn (lending club)
   // multiple calls within a second will be 500'd
   // Use this sparingly
-  sellNoteAtMarkup : function(theNote, markup) {
+  sellNoteAtMarkup: function(theNote, markup) {
     // console.log('Selling note: ' + theNote.noteId + ' at markup: ' + markup);
     if (markup < 0.01 || markup >= 0.70) {
       throw Error('Sale was attempted on note: ' + theNote.noteId +
-                  ' at invalid markup: ' + markup);
+        ' at invalid markup: ' + markup);
     }
-    const notesToSell = [ {
-      "loanId" : theNote.loanId,
-      "orderId" : theNote.orderId,
-      "noteId" : theNote.noteId,
-      "askingPrice" : calcAskingPrice(theNote, markup),
-    } ];
+    const notesToSell = [{
+      "loanId": theNote.loanId,
+      "orderId": theNote.orderId,
+      "noteId": theNote.noteId,
+      "askingPrice": calcAskingPrice(theNote, markup),
+    }];
     sellNotes(notesToSell);
   }
 };
@@ -194,13 +202,13 @@ function convertNotesToFolioSellSchema(theSellNotes) {
     //             askPrice / theNote.principalPending);
     if (askPrice < theNote.principalPending) {
       throw Error('Sale was attempted on note: ' + theNote.noteId +
-                  ' at invalid askPrice: ' + askPrice);
+        ' at invalid askPrice: ' + askPrice);
     }
     notesToSell.push({
-      "loanId" : theNote.loanId,
-      "orderId" : theNote.orderId,
-      "noteId" : theNote.noteId,
-      "askingPrice" : askPrice,
+      "loanId": theNote.loanId,
+      "orderId": theNote.orderId,
+      "noteId": theNote.noteId,
+      "askingPrice": askPrice,
     });
   }
   return notesToSell;
@@ -208,21 +216,21 @@ function convertNotesToFolioSellSchema(theSellNotes) {
 
 class NoteCollection {
   constructor(rawNotes) {
-    this.notes = rawNotes;
-  }
-  // targetId must be an integer
+      this.notes = rawNotes;
+    }
+    // targetId must be an integer
   byId(targetId) {
-    return this.notes.find(function(note){
-      return note.noteId === targetId;
-    });
-  }
-  // loanStatus must be a string
+      return this.notes.find(function(note) {
+        return note.noteId === targetId;
+      });
+    }
+    // loanStatus must be a string
   byLoanStatus(loanStatus) {
-    return this.notes.filter(function(note) {
-      return note.loanStatus === loanStatus;
-    });
-  }
-  // purpose must be a string
+      return this.notes.filter(function(note) {
+        return note.loanStatus === loanStatus;
+      });
+    }
+    // purpose must be a string
   byPurpose(purpose) {
     return this.notes.filter(function(note) {
       return note.purpose === purpose;
@@ -233,11 +241,11 @@ class NoteCollection {
 function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
   let notesToSell = [];
   const table = new Table({
-    head : [
+    head: [
       'noteId', 'initialMarkup', 'finalMarkup', 'initialAskingPrice',
       'finalAskingPrice', 'initialYTM', 'finalYTM'
     ],
-    colWidths : [ 14, 12, 12, 12, 12, 12, 12 ]
+    colWidths: [14, 12, 12, 12, 12, 12, 12]
   });
   const arrayLength = theNotes.length;
   for (let i = 0; i < arrayLength; i++) {
@@ -245,31 +253,31 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
     const initialMarkup = 0.009;
 
     const monthlyPayment = calcMonthlyPayment(theNote.principalPending, 12,
-                                              theNote.interestRate / 100 / 12);
+      theNote.interestRate / 100 / 12);
 
     let params = {
-      monthlyPayment : monthlyPayment,
-      remainingPayments : 12,
-      askPrice : calcAskingPrice(theNote, initialMarkup)
+      monthlyPayment: monthlyPayment,
+      remainingPayments: 12,
+      askPrice: calcAskingPrice(theNote, initialMarkup)
     };
     let initialYTM = calcYield(params);
 
     /* Finds the markup such that we reach an acceptable YTM for that markup
-    * */
+     * */
     let markup = calcOptimalMarkup(theNote, initialMarkup, acceptableYTM);
     if (markup && markup > acceptableMarkup) {
       const askPrice = calcAskingPrice(theNote, markup);
       params = {
-        monthlyPayment : monthlyPayment,
-        remainingPayments : 12,
-        askPrice : askPrice
+        monthlyPayment: monthlyPayment,
+        remainingPayments: 12,
+        askPrice: askPrice
       };
       let finalYTM = calcYield(params);
 
       if (askPrice >= theNote.principalPending) {
         notesToSell.push({
-          theNote : theNote,
-          askPrice : askPrice,
+          theNote: theNote,
+          askPrice: askPrice,
         });
 
         const viewObject = [
@@ -285,7 +293,10 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
       }
     }
   }
-  return {notesToSell: notesToSell, table: table};
+  return {
+    notesToSell: notesToSell,
+    table: table
+  };
 }
 
 ////
@@ -314,9 +325,9 @@ const sellSomeNotes = function() {
     // console.log('NOTE: %j', theNote);
 
     let sellable =
-        filterSellableNotes(theNotes,
-                            config.get('transaction.acceptableYTM'),
-                            config.get('transaction.acceptableMarkup'));
+      filterSellableNotes(theNotes,
+        config.get('transaction.acceptableYTM'),
+        config.get('transaction.acceptableMarkup'));
     let notesToSell = sellable.notesToSell;
     let table = sellable.table;
 
@@ -332,13 +343,13 @@ const withdrawFunds = function(cash) {
   const now = new Date();
   const estimatedFundsTransferStartDate = dateFormat(now, "mm/dd/yyyy");
   lc.accounts.funds.withdraw(investorId, cash, estimatedFundsTransferStartDate,
-                               function(err, ret) {
-    if (err) {
-      console.log('error: ' + JSON.stringify(err));
-      return;
-    }
-    console.log(JSON.stringify(ret));
-  });
+    function(err, ret) {
+      if (err) {
+        console.log('error: ' + JSON.stringify(err));
+        return;
+      }
+      console.log(JSON.stringify(ret));
+    });
 };
 
 const getAvailableFunds = function(cb) {
@@ -382,12 +393,23 @@ const withdrawPoller = function() {
 
 
 /* = = = = = = = = = = = = = = = = = = = */
-sellPoller();
-withdrawPoller();
-async function loop() {
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-  await sleep(Hours(6)).then(loop);
-}
 
+(function main() {
+  const loadAvg = os.loadavg();
+  const tm = os.totalmem();
+  const fm = os.freemem();
+  const pm = fm / tm;
+  console.log(os.networkInterfaces());
+  console.log(os.cpus());
+  console.log('(mem, freemem, %free) : (' + tm + ', ' + fm + ', ' + pm + ')');
+  console.log('loadAvg: ' + loadAvg);
+
+  sellPoller();
+  // withdrawPoller();
+  // async function loop() {
+  //   function sleep(ms) {
+  //     return new Promise(resolve => setTimeout(resolve, ms));
+  //   }
+  //   await sleep(Hours(6)).then(loop);
+  // }
+}());
