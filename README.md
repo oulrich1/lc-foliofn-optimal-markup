@@ -8,13 +8,13 @@ see these ones: https://github.com/bryansh/lendingClubAPI
 
 ## Dependencies
 
-* cli-table
+* request
 * dateformat
 * newton-raphson
-* request
 * simple-rate-limiter
 * node-lending-club-api
 * config
+* cli-table
 
 ## Usage
 
@@ -24,3 +24,4 @@ Create a json config file named 'production.json' under ./config/.
 export NODE_ENV=production
 node main.js
 ````
+

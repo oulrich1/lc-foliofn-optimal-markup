@@ -2,20 +2,15 @@
 /*jslint node: true */
 "use strict";
 
-const Table = require('cli-table');
-const dateFormat = require('dateformat');
-const findRoot = require('newton-raphson');
-const extend = require('util')._extend;
-const lc = require('node-lending-club-api');
-const config = require('config');
 const async = require('async');
+const config = require('config');
+const dateFormat = require('dateformat');
+const extend = require('util')._extend;
+const findRoot = require('newton-raphson');
+const lc = require('node-lending-club-api');
 const os = require('os');
-
-
-lc.init({
-  apiKey: config.get('investor.apiKey')
-});
-const investorId = config.get('investor.id');
+const Promise = require("bluebird");
+const Table = require('cli-table');
 
 function getMaxExpirationDate() {
   const days = 7;
@@ -83,7 +78,7 @@ function calcYield(params) {
     return m - calcMonthlyPayment(pr, n, r);
   };
   const fprime = function(r) {
-    const h = 0.001; // almost forgot the h again..
+    const h = 0.0001; // almost forgot the h again..
     return (f(r + h, m, pr, n) - f(r, m, pr, n)) / h;
   };
 
@@ -91,7 +86,7 @@ function calcYield(params) {
   return findRoot(f, fprime, initialRateGuesstimate) * 12;
 }
 
-function calcAskingPrice(theNote, markup) {
+function calcAskPrice(theNote, markup) {
   const principalPlusIntrest =
     theNote.principalPending + theNote.accruedInterest;
   return principalPlusIntrest * (markup + 1);
@@ -106,14 +101,14 @@ function calcAskingPrice(theNote, markup) {
 // //
 function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
   function isValidMarkup(markup) {
-    return (markup > 0.01 && markup < 0.7);
+    return (markup > 0.005 && markup < 0.7);
   }
 
   function isValidYTM(ytm) {
     return ytm > 0.0495; // is good for the buyer
   }
 
-  const initialAskPrice = calcAskingPrice(theNote, initialMarkup);
+  const initialAskPrice = calcAskPrice(theNote, initialMarkup);
   const remainingPayments = 12; // calcRemainingPayments(theNote.loanLength, theNote.dateIssued);
   const interestRate = theNote.interestRate / 100 / 12;
   let params = {
@@ -125,14 +120,14 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
 
   const g = function(markup) {
     let paramsCopy = extend({}, params);
-    paramsCopy.askPrice = calcAskingPrice(theNote, markup);
+    paramsCopy.askPrice = calcAskPrice(theNote, markup);
     const val = acceptableYTM - calcYield(paramsCopy);
     // console.log('g  : ' + val);
     return val;
   };
 
   const gprime = function(markup) {
-    const h = 0.001; // almost forgot the h again..
+    const h = 0.0001; // almost forgot the h again..
     const delta = (g(markup + h) - g(markup)) / h;
     // console.log('g` : ' + delta);
     return delta;
@@ -141,78 +136,6 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
   return findRoot(g, gprime, initialMarkup);
 }
 
-
-// https://www.lendingclub.com/foliofn/folioInvestingAPIDocument.action
-const client = {
-
-  buyNotes: function(notesToBuy) {
-    lc.folio.buy(investorId, notesToBuy,
-      function(err, ret) {
-        if (err) {
-          console.log('Error: ' + err);
-          return;
-        }
-        console.log(ret);
-      });
-  },
-
-  // param notesToSell is an array of objects containing:
-  //   objects that follow the foliofn sell schema
-  sellNotes: function(notesToSell) {
-    lc.folio.sell(investorId, getMaxExpirationDate(), notesToSell,
-      function(err, ret) {
-        if (err) {
-          console.log('Error: ' + err);
-          return;
-        }
-        console.log(ret);
-      });
-  },
-
-  // Sells one note at a markup on foliofn (lending club)
-  // multiple calls within a second will be 500'd
-  // Use this sparingly
-  sellNoteAtMarkup: function(theNote, markup) {
-    // console.log('Selling note: ' + theNote.noteId + ' at markup: ' + markup);
-    if (markup < 0.01 || markup >= 0.70) {
-      throw Error('Sale was attempted on note: ' + theNote.noteId +
-        ' at invalid markup: ' + markup);
-    }
-    const notesToSell = [{
-      "loanId": theNote.loanId,
-      "orderId": theNote.orderId,
-      "noteId": theNote.noteId,
-      "askingPrice": calcAskingPrice(theNote, markup),
-    }];
-    sellNotes(notesToSell);
-  }
-};
-
-// creates an array of objects that follow the foliofn
-// 'sell' endpoint request data schema
-// requires param 'theSellNotes' to follow schema:
-//   [{theNote: lendingClubNote, askPrice: askPrice}]
-function convertNotesToFolioSellSchema(theSellNotes) {
-  let notesToSell = [];
-  for (var i = 0; i < theSellNotes.length; ++i) {
-    const theNote = theSellNotes[i].theNote;
-    const askPrice = theSellNotes[i].askPrice;
-    // console.log('Selling note: ' + theNote.noteId + ' at askPrice: ' +
-    //             askPrice + ' markup: ' +
-    //             askPrice / theNote.principalPending);
-    if (askPrice < theNote.principalPending) {
-      throw Error('Sale was attempted on note: ' + theNote.noteId +
-        ' at invalid askPrice: ' + askPrice);
-    }
-    notesToSell.push({
-      "loanId": theNote.loanId,
-      "orderId": theNote.orderId,
-      "noteId": theNote.noteId,
-      "askingPrice": askPrice,
-    });
-  }
-  return notesToSell;
-}
 
 class NoteCollection {
   constructor(rawNotes) {
@@ -238,8 +161,42 @@ class NoteCollection {
   };
 }
 
+
 function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
-  let notesToSell = [];
+  function calcOptimalAskPrice(theNote) {
+    const initialMarkup = 0.005; // initial parameter for calculation
+    const markup = calcOptimalMarkup(theNote, initialMarkup, acceptableYTM);
+    if (markup && markup > acceptableMarkup) {
+      return calcAskPrice(theNote, markup);
+    }
+    throw Error(
+        'Invalid markup calculated: \'' + markup +
+        '\' for note: ' + JSON.stringify(theNote));
+  }
+
+  function isNoteSellable(theNote) {
+    try {
+      // (1) asking price must exist for note
+      // (2) must at least be greater than principle remaining
+      const askingPrice = calcOptimalAskPrice(theNote);
+      return askingPrice >= theNote.principalPending;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function appendAskPriceProperty(note) {
+    note.askPrice = calcOptimalAskPrice(note);
+    return note;
+  }
+
+  return theNotes.filter(isNoteSellable).map(appendAskPriceProperty);
+}
+
+// NOTE: does not do any linting or data-verification.
+//       will consume theNotes data as if it were testing
+//       pre-verified (bad stuff 'divide by 0' stuff gone!)
+function makeTable(theNotes, acceptableYTM) {
   const table = new Table({
     head: [
       'noteId', 'initialMarkup', 'finalMarkup', 'initialAskingPrice',
@@ -247,56 +204,66 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
     ],
     colWidths: [14, 12, 12, 12, 12, 12, 12]
   });
-  const arrayLength = theNotes.length;
-  for (let i = 0; i < arrayLength; i++) {
-    const theNote = theNotes[i];
-    const initialMarkup = 0.009;
 
-    const monthlyPayment = calcMonthlyPayment(theNote.principalPending, 12,
-      theNote.interestRate / 100 / 12);
+  theNotes.forEach((note) => {
+    const initialMarkup = 0.005;   // initial parameter for calculation
+    const remainingPayments = 12;  // TODO: read from each note.. (For now this
+                                   // is a SAFE estimate (needs more testing))
+    const monthlyPayment = calcMonthlyPayment(
+        note.principalPending, remainingPayments,
+        note.interestRate / 100 / remainingPayments);
 
-    let params = {
+    const initialYieldParams = {
       monthlyPayment: monthlyPayment,
-      remainingPayments: 12,
-      askPrice: calcAskingPrice(theNote, initialMarkup)
+      remainingPayments: remainingPayments,
+      askPrice: calcAskPrice(note, initialMarkup)
     };
-    let initialYTM = calcYield(params);
+    const finalYieldParams_Estimated_seelendingclub_ytm = {
+      monthlyPayment: monthlyPayment,
+      remainingPayments: remainingPayments,
+      askPrice: calcAskPrice(note, calcOptimalMarkup(note, initialMarkup, acceptableYTM))
+    };
 
-    /* Finds the markup such that we reach an acceptable YTM for that markup
-     * */
-    let markup = calcOptimalMarkup(theNote, initialMarkup, acceptableYTM);
-    if (markup && markup > acceptableMarkup) {
-      const askPrice = calcAskingPrice(theNote, markup);
-      params = {
-        monthlyPayment: monthlyPayment,
-        remainingPayments: 12,
-        askPrice: askPrice
-      };
-      let finalYTM = calcYield(params);
+    const viewObject = [
+      note.noteId,
+      initialMarkup,
+      roundNumber(calcOptimalMarkup(note, initialMarkup, acceptableYTM), 4),
+      roundNumber(calcAskPrice(note, initialMarkup), 2),
+      roundNumber(calcAskPrice(note, calcOptimalMarkup(note, initialMarkup, acceptableYTM)), 2),
+      roundNumber(calcYield(initialYieldParams), 4),
+      roundNumber(calcYield(finalYieldParams_Estimated_seelendingclub_ytm), 4),
+    ];
+    table.push(viewObject);
+  });
 
-      if (askPrice >= theNote.principalPending) {
-        notesToSell.push({
-          theNote: theNote,
-          askPrice: askPrice,
-        });
+  return table;
+}
 
-        const viewObject = [
-          theNote.noteId,
-          initialMarkup,
-          roundNumber(markup, 4),
-          roundNumber(calcAskingPrice(theNote, initialMarkup), 2),
-          roundNumber(askPrice, 2),
-          roundNumber(initialYTM, 4),
-          roundNumber(finalYTM, 4),
-        ];
-        table.push(viewObject);
-      }
+
+// creates an array of objects that follow the foliofn
+// 'sell' endpoint request data schema
+// requires param 'theSellNotes' to follow schema:
+//   [{theNote: lendingClubNote, askPrice: askPrice}]
+function convertNotesToFolioSellSchema(theSellNotes) {
+  let notesToSell = [];
+  theSellNotes.forEach((theNote) => {
+    const askPrice = theNote.askPrice;
+    // const markupPercent = `${roundNumber(((askPrice / theNote.principalPending) - 1) * 100, 2)}%`;
+    // console.log('Selling note: ' + theNote.noteId +
+    //             ' at askPrice: $' + roundNumber(askPrice, 2) +
+    //             ' markup: ' + markupPercent);
+    if (askPrice < theNote.principalPending) {
+      throw Error('Sale was attempted on note: ' + theNote.noteId +
+        ' at invalid askPrice: ' + askPrice);
     }
-  }
-  return {
-    notesToSell: notesToSell,
-    table: table
-  };
+    notesToSell.push({
+      "loanId"   : theNote.loanId,
+      "orderId"  : theNote.orderId,
+      "noteId"   : theNote.noteId,
+      "askingPrice" : askPrice,
+    });
+  });
+  return notesToSell;
 }
 
 ////
@@ -310,67 +277,149 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
 // This is an example:
 //
 
-const sellSomeNotes = function() {
-  lc.accounts.detailedNotes(investorId, function(err, ret) {
-    if (err) {
-      console.log('error: ' + err);
-      return;
+// https://www.lendingclub.com/foliofn/folioInvestingAPIDocument.action
+class Client {
+  constructor(apiKey, investorId) {
+    lc.init({
+      apiKey: apiKey
+    });
+    this.investorId = investorId;
+  }
+
+  buyNotes(notesToBuy) {
+    lc.folio.buy(this.investorId, notesToBuy,
+      function(err, ret) {
+        if (err) {
+          console.log('Error: ' + err);
+          return;
+        }
+        console.log(ret);
+      });
+  }
+
+  sellNotes(notesToSell) {
+    return new Promise((resolve, reject) => {
+      lc.folio.sell(this.investorId, getMaxExpirationDate(), notesToSell, (err, ret) => {
+        if (err) {
+          console.log('Error: ' + err);
+          reject(err);
+          return;
+        }
+        resolve(ret);
+      });
+    });
+  }
+
+  // Sells one note at a markup on foliofn (lending club)
+  // multiple calls within a second will be 500'd
+  // Use this sparingly
+  sellNoteAtMarkup(theNote, markup) {
+    // console.log('Selling note: ' + theNote.noteId + ' at markup: ' + markup);
+    if (markup < 0.0001 || markup >= 0.70) {
+      throw Error('Sale was attempted on note: ' + theNote.noteId +
+        ' at invalid markup: ' + markup);
     }
+    const notesToSell = [{
+      "loanId": theNote.loanId,
+      "orderId": theNote.orderId,
+      "noteId": theNote.noteId,
+      "askingPrice": calcAskPrice(theNote, markup),
+    }];
+    this.sellNotes(notesToSell);
+  }
 
-    const notes = new NoteCollection(ret.myNotes);
-    // const theNotes = notes.byPurpose('Credit card refinancing');
-    // const theNotes = notes.byLoanStatus('Late (31-120 days)');
-    const theNotes = notes.notes;
-    // const theNote = notes.byId(noteId);
-    // console.log('NOTE: %j', theNote);
+  getNotes() {
+    return new Promise((resolve, reject) => {
+      lc.accounts.detailedNotes(this.investorId, (err, ret) => {
+        if (err || !ret || !ret.myNotes) {
+          reject(new Error('getNotes failed: ' + err));
+        } else {
+          resolve(ret.myNotes);
+        }
+      });
+    });
+  }
 
-    let sellable =
-      filterSellableNotes(theNotes,
-        config.get('transaction.acceptableYTM'),
-        config.get('transaction.acceptableMarkup'));
-    let notesToSell = sellable.notesToSell;
-    let table = sellable.table;
+  sellNotesAtOptimalMarkup(notes, acceptableYTM, acceptableMarkup) {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('Filtering from %d notes...', notes.length);
+        const filteredNotes = filterSellableNotes(notes, acceptableYTM, acceptableMarkup);
+        console.log('Selling %d notes...', filteredNotes.length);
+        // let table = makeTable(filteredNotes, acceptableYTM);
+        // console.log(table.toString());
+        let foliofnSellNotes = convertNotesToFolioSellSchema(filteredNotes);
+        this.sellNotes(foliofnSellNotes).then((ret) => {
+          if(ret.sellNoteStatus === 'SUCCESS') {
+            console.log('Sold %d notes...(%d confirmation) (%s)',
+                        filteredNotes.length,
+                        ret.sellNoteConfirmations.length,
+                        ret.sellNoteStatus);
+            resolve(filteredNotes);
+          } else {
+            console.log('Failed to sell %d notes...(%d confirmation) (%s)',
+                        filteredNotes.length,
+                        ret.sellNoteConfirmations.length,
+                        ret.sellNoteStatus);
+            reject(new Error('Failed to sell notes, see ret'));
+          }
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
 
-    // console.log(table.toString());
-    console.log('Selling %d notes...', notesToSell.length);
-    let foliofnSellNotes = convertNotesToFolioSellSchema(notesToSell);
-    client.sellNotes(foliofnSellNotes);
-  });
-};
+  withdrawFunds(cash) {
+    console.log("Going to Withdraw: " + cash);
+    const now = new Date();
+    const estimatedFundsTransferStartDate = dateFormat(now, "mm/dd/yyyy");
+    lc.accounts.funds.withdraw(
+        this.investorId, cash, estimatedFundsTransferStartDate,
+        (err, ret) => {
+          if (err) {
+            console.log('error: ' + JSON.stringify(err));
+            return;
+          }
+          console.log(JSON.stringify(ret));
+        });
+  }
 
-const withdrawFunds = function(cash) {
-  console.log("Going to Withdraw: " + cash);
-  const now = new Date();
-  const estimatedFundsTransferStartDate = dateFormat(now, "mm/dd/yyyy");
-  lc.accounts.funds.withdraw(investorId, cash, estimatedFundsTransferStartDate,
-    function(err, ret) {
+  getAvailableFunds(cb) {
+    lc.accounts.summary(this.investorId, (err, ret) => {
       if (err) {
         console.log('error: ' + JSON.stringify(err));
         return;
       }
-      console.log(JSON.stringify(ret));
+      console.log("> " + JSON.stringify(ret));
+      cb(ret.availableCash);
     });
-};
+  }
 
-const getAvailableFunds = function(cb) {
-  lc.accounts.summary(investorId, (err, ret) => {
-    if (err) {
-      console.log('error: ' + JSON.stringify(err));
-      return;
-    }
-    console.log("> " + JSON.stringify(ret));
-    cb(ret.availableCash);
-  });
-};
+} // class Client
 
 
 /* = = = = = = = = = = = = = = = = = = = */
 
 const sellPollHandler = function() {
   // see settings in ./config/*.json
-  console.log("> sellPollHandler");
-  sellSomeNotes();
+  console.log("> sellPollHandler starting...");
+  const client = new Client(config.get('investor.apiKey'),
+                            config.get('investor.id'));
+
+  client.getNotes().then((notes) => {
+    const notesCollection = new NoteCollection(notes);
+    // const theNotes = notesCollection.byPurpose('Credit card refinancing');
+    // const theNotes = notesCollection.byLoanStatus('Late (31-120 days)');
+    client.sellNotesAtOptimalMarkup(
+          notesCollection.notes,
+          config.get('transaction.acceptableYTM'),
+          config.get('transaction.acceptableMarkup')).catch((err) => {
+            console.log(err);
+          });
+  });
 };
+
 const sellPoller = function() {
   console.log("Selling... every 3 days");
   sellPollHandler();
@@ -379,9 +428,11 @@ const sellPoller = function() {
 
 const withdrawPollHandler = function() {
   console.log("> withdrawPollHandler");
-  getAvailableFunds((cash) => {
+  const client = new Client(config.get('investor.apiKey'),
+                            config.get('investor.id'));
+  client.getAvailableFunds((cash) => {
     if (cash > 150) {
-      withdrawFunds(cash);
+      client.withdrawFunds(cash);
     }
   });
 };
@@ -404,7 +455,14 @@ const withdrawPoller = function() {
   console.log('(mem, freemem, %free) : (' + tm + ', ' + fm + ', ' + pm + ')');
   console.log('loadAvg: ' + loadAvg);
 
-  sellPoller();
+  try {
+    sellPoller();
+  } catch (err) {
+    console.log("Encountered Error Trying to Sell: " + err);
+  }
+
+  // Wanting to use a promise scheme for polling.
+  // But.. need to measure the overhead vs just setInterval..
   // withdrawPoller();
   // async function loop() {
   //   function sleep(ms) {
