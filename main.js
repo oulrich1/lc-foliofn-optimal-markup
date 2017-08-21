@@ -12,11 +12,61 @@ const os = require('os');
 const Promise = require("bluebird");
 const Table = require('cli-table');
 
-function getMaxExpirationDate() {
-  const days = 7;
+function getMaxExpirationDate(days) {
   var now = new Date();
   now.setDate(now.getDate() + days);
   return dateFormat(now, "mm/dd/yyyy");
+}
+
+function addMonthsUTC (date, count) {
+  if (date && count) {
+    var date = new Date(+date);
+    var m, d = date.getUTCDate();
+
+    date.setUTCMonth(date.getUTCMonth() + count, 1);
+    m = date.getUTCMonth();
+    date.setUTCDate(d);
+    if (date.getUTCMonth() !== m) date.setUTCDate(0);
+  }
+  return date;
+}
+
+function dateClearClock(d) {
+    d.setHours(0,0,0,0);
+    return new Date(
+        d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate());
+}
+
+function dateCompare(d1, d2) {
+  d1 = dateClearClock(d1);
+  d2 = dateClearClock(d2);
+  if (d1.getTime() === d2.getTime()) {
+    return 0;
+  } else if (d1.getTime() < d2.getTime()) {
+    return -1;
+  }
+  return 1;
+}
+
+// https://stackoverflow.com/questions/2536379/difference-in-months-between-two-dates-in-javascript
+function monthDiff(d1, d2) {
+  let months;
+  months = (d2.getFullYear() - d1.getFullYear()) * 12;
+  months -= d1.getMonth() + 1;
+  months += d2.getMonth();
+  return months <= 0 ? 0 : months;
+}
+
+function calcRemainingPayments(loanLength, dateIssued) {
+  const now = new Date();
+  const expiration = addMonthsUTC(dateIssued, loanLength);
+  const monthsLeft = monthDiff(now, expiration);
+  if (monthsLeft === 0) {
+    throw Error(
+        'Date ' + dateIssued + ' already expired after ' + loanLength +
+        ' payments. Today is after such expiration');
+  }
+  return monthsLeft;
 }
 
 function Seconds(n) {
@@ -52,8 +102,7 @@ function roundNumber(num, scale) {
 
 // interest rate per payment is interest rate / yearly payments
 // ie: APR 15% and 12 Payments (monthly payments) -> 15% / 12 => 0.15/12
-function calcMonthlyPayment(principal, remainingPayments,
-  interestRatePerPayment) {
+function calcMonthlyPayment(principal, remainingPayments, interestRatePerPayment) {
   // http://forum.lendacademy.com/index.php?topic=4192.0
   const p = principal;
   const n = remainingPayments;
@@ -83,7 +132,8 @@ function calcYield(params) {
   };
 
   const initialRateGuesstimate = 1.0;
-  return findRoot(f, fprime, initialRateGuesstimate) * 12;
+  const monthsInYear = 12;
+  return findRoot(f, fprime, initialRateGuesstimate) * monthsInYear;
 }
 
 function calcAskPrice(theNote, markup) {
@@ -100,20 +150,12 @@ function calcAskPrice(theNote, markup) {
 //       note other than strictly YTM
 // //
 function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
-  function isValidMarkup(markup) {
-    return (markup > 0.005 && markup < 0.7);
-  }
-
-  function isValidYTM(ytm) {
-    return ytm > 0.0495; // is good for the buyer
-  }
-
   const initialAskPrice = calcAskPrice(theNote, initialMarkup);
-  const remainingPayments = 12; // calcRemainingPayments(theNote.loanLength, theNote.dateIssued);
+  const remainingPayments = calcRemainingPayments(
+    theNote.loanLength, new Date(theNote.issueDate));
   const interestRate = theNote.interestRate / 100 / 12;
   let params = {
-    monthlyPayment: calcMonthlyPayment(theNote.principalPending,
-      remainingPayments, interestRate),
+    monthlyPayment: calcMonthlyPayment(theNote.principalPending, remainingPayments, interestRate),
     remainingPayments: remainingPayments,
     askPrice: initialAskPrice
   };
@@ -136,11 +178,12 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
   return findRoot(g, gprime, initialMarkup);
 }
 
-
 class NoteCollection {
   constructor(rawNotes) {
       this.notes = rawNotes;
     }
+
+  // Filter helpers, does not order notes
     // targetId must be an integer
   byId(targetId) {
       return this.notes.find(function(note) {
@@ -158,7 +201,39 @@ class NoteCollection {
     return this.notes.filter(function(note) {
       return note.purpose === purpose;
     });
-  };
+  }
+    // date must be formatted: <yyyy>-<mm>-<dd>
+  byIssuedDate(date) {
+    return this.notes.filter(function(note) {
+      return (dateCompare(date, new Date(note.issueDate)) === 0);
+    });
+  }
+    // date must be formatted: <yyyy>-<mm>-<dd>
+  byIssuedDateBefore(date) {
+    return this.notes.filter(function(note) {
+      return (dateCompare(date, new Date(note.issueDate)) > 0);
+    });
+  }
+    // date must be formatted: <yyyy>-<mm>-<dd>
+  byIssuedDateAfter(date) {
+    return this.notes.filter(function(note) {
+      return (dateCompare(date, new Date(note.issueDate)) < 0);
+    });
+  }
+
+  byMonthsIssued(m) {
+    return this.notes.filter(function(note) {
+      const dateAfterMonthsLater = addMonthsUTC(new Date(note.issueDate), m);
+      return (dateCompare(dateAfterMonthsLater, new Date()) <= 0);
+    });
+  }
+
+  difference(rhs) {
+    return this.notes.filter(function(note) {
+      const item = rhs.find((el) => { return (note.noteId === el.noteId) });
+      return (item === undefined);
+    });
+  }
 }
 
 
@@ -207,11 +282,11 @@ function makeTable(theNotes, acceptableYTM) {
 
   theNotes.forEach((note) => {
     const initialMarkup = 0.005;   // initial parameter for calculation
-    const remainingPayments = 12;  // TODO: read from each note.. (For now this
-                                   // is a SAFE estimate (needs more testing))
+    const remainingPayments = calcRemainingPayments(
+        note.loanLength, new Date(note.issueDate));
     const monthlyPayment = calcMonthlyPayment(
         note.principalPending, remainingPayments,
-        note.interestRate / 100 / remainingPayments);
+        note.interestRate / 100 / 12);
 
     const initialYieldParams = {
       monthlyPayment: monthlyPayment,
@@ -299,7 +374,7 @@ class Client {
 
   sellNotes(notesToSell) {
     return new Promise((resolve, reject) => {
-      lc.folio.sell(this.investorId, getMaxExpirationDate(), notesToSell, (err, ret) => {
+      lc.folio.sell(this.investorId, getMaxExpirationDate(7), notesToSell, (err, ret) => {
         if (err) {
           console.log('Error: ' + err);
           reject(err);
@@ -346,6 +421,7 @@ class Client {
         console.log('Filtering from %d notes...', notes.length);
         const filteredNotes = filterSellableNotes(notes, acceptableYTM, acceptableMarkup);
         console.log('Selling %d notes...', filteredNotes.length);
+        console.log(' > at ytm=%d, markup=%d', acceptableYTM, acceptableMarkup);
         // let table = makeTable(filteredNotes, acceptableYTM);
         // console.log(table.toString());
         let foliofnSellNotes = convertNotesToFolioSellSchema(filteredNotes);
@@ -361,7 +437,7 @@ class Client {
                         filteredNotes.length,
                         ret.sellNoteConfirmations.length,
                         ret.sellNoteStatus);
-            reject(new Error('Failed to sell notes, see ret'));
+            reject(new Error('Failed to sell notes, see ret: ' + ret));
           }
         });
       } catch (err) {
@@ -408,15 +484,23 @@ const sellPollHandler = function() {
                             config.get('investor.id'));
 
   client.getNotes().then((notes) => {
-    const notesCollection = new NoteCollection(notes);
-    // const theNotes = notesCollection.byPurpose('Credit card refinancing');
-    // const theNotes = notesCollection.byLoanStatus('Late (31-120 days)');
-    client.sellNotesAtOptimalMarkup(
-          notesCollection.notes,
-          config.get('transaction.acceptableYTM'),
-          config.get('transaction.acceptableMarkup')).catch((err) => {
-            console.log(err);
-          });
+    let nc = new NoteCollection(notes);
+    const minYTM = config.get('transaction.acceptableYTM');
+    const minMrk = config.get('transaction.acceptableMarkup');
+    // const theNotes = nc.byPurpose('Credit card refinancing');
+    // const theNotes = nc.byLoanStatus('Late (31-120 days)');
+    console.log('Notes: ' + notes.length);
+
+    // sell notes oldest to newest, at an increasing markup
+    const monthsIssued = [1, 4, 8];
+    for (var i = 2; i >= 0; --i) {
+      notes = nc.byMonthsIssued(monthsIssued[i]);
+      client.sellNotesAtOptimalMarkup(notes,
+          minYTM-(i*0.0080),
+          minMrk-(i*0.0030))
+        .catch((err) => {});
+      nc = new NoteCollection(nc.difference(notes));
+    }
   });
 };
 
@@ -457,6 +541,7 @@ const withdrawPoller = function() {
 
   try {
     sellPoller();
+    // withdrawPoller();
   } catch (err) {
     console.log("Encountered Error Trying to Sell: " + err);
   }
