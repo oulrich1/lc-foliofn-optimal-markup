@@ -4,7 +4,8 @@
   "description": "happy middle ground for buyer and seller on foliofn",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "export NODE_ENV=private && node main.js"
   },
   "repository": {
     "type": "git",
