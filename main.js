@@ -425,21 +425,25 @@ class Client {
         // let table = makeTable(filteredNotes, acceptableYTM);
         // console.log(table.toString());
         let foliofnSellNotes = convertNotesToFolioSellSchema(filteredNotes);
-        this.sellNotes(foliofnSellNotes).then((ret) => {
-          if(ret.sellNoteStatus === 'SUCCESS') {
-            console.log('Sold %d notes...(%d confirmation) (%s)',
-                        filteredNotes.length,
-                        ret.sellNoteConfirmations.length,
-                        ret.sellNoteStatus);
-            resolve(filteredNotes);
-          } else {
-            console.log('Failed to sell %d notes...(%d confirmation) (%s)',
-                        filteredNotes.length,
-                        ret.sellNoteConfirmations.length,
-                        ret.sellNoteStatus);
-            reject(new Error('Failed to sell notes, see ret: ' + ret));
-          }
-        });
+        if (foliofnSellNotes.length === 0) {
+          resolve(filteredNotes);
+        } else {
+          this.sellNotes(foliofnSellNotes).then((ret) => {
+            if(ret.sellNoteStatus === 'SUCCESS') {
+              console.log('Sold %d notes...(%d confirmation) (%s)',
+                          filteredNotes.length,
+                          ret.sellNoteConfirmations.length,
+                          ret.sellNoteStatus);
+              resolve(filteredNotes);
+            } else {
+              console.log('Failed to sell %d notes...(%d confirmation) (%s)',
+                          filteredNotes.length,
+                          ret.sellNoteConfirmations.length,
+                          ret.sellNoteStatus);
+              reject(new Error('Failed to sell notes, see ret: ' + ret));
+            }
+          });
+        }
       } catch (err) {
         reject(err);
       }
@@ -477,7 +481,7 @@ class Client {
 
 /* = = = = = = = = = = = = = = = = = = = */
 
-const sellPollHandler = function() {
+const sellPollHandler = () => {
   // see settings in ./config/*.json
   console.log("> sellPollHandler starting...");
   const client = new Client(config.get('investor.apiKey'),
