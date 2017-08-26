@@ -8,20 +8,21 @@ see these ones: https://github.com/bryansh/lendingClubAPI
 
 ## Dependencies
 
-* request
-* dateformat
-* newton-raphson
-* simple-rate-limiter
-* node-lending-club-api
-* config
-* cli-table
+> See package.json
 
 ## Usage
 
-Create a json config file named 'production.json' under ./config/.
+Create a json config file named 'private.json' under ./config/.
+
+Start the client
+````
+npm start
+````
+
+If not using npm:
 
 ````
-export NODE_ENV=production
+export NODE_ENV=private
 node main.js
 ````
 
