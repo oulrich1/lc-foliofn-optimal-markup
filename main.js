@@ -497,14 +497,20 @@ const sellPollHandler = () => {
 
     // sell notes oldest to newest, at an increasing markup
     const monthsIssued = [1, 4, 8];
+    let promises = [];
     for (var i = 2; i >= 0; --i) {
       notes = nc.byMonthsIssued(monthsIssued[i]);
-      client.sellNotesAtOptimalMarkup(notes,
+      let p = client.sellNotesAtOptimalMarkup(notes,
           minYTM-(i*0.0080),
           minMrk-(i*0.0030))
         .catch((err) => {});
+      promises.push(p);
       nc = new NoteCollection(nc.difference(notes));
     }
+    (async () => {
+      await Promise.all(promises);
+      console.log('Done. Waiting for trigger...');
+    })();
   });
 };
 
