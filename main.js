@@ -493,6 +493,23 @@ const sellPollHandler = () => {
     const minMrk = config.get('transaction.acceptableMarkup');
     // const theNotes = nc.byPurpose('Credit card refinancing');
     // const theNotes = nc.byLoanStatus('Late (31-120 days)');
+    //loanStatus in {
+    //   In Review
+    //   Expired
+    //   Removed
+    //   Withdrawn by Applicant
+    //   In Funding
+    //   Issuing
+    //   Issued
+    //   Current
+    //   In Grace Period
+    //   Late (16-30 days)
+    //   Late (31-120 days)
+    //   Fully paid
+    //   Default
+    //   Charged Off
+    //   Partially Funded
+    //}
     console.log('Notes: ' + notes.length);
 
     // sell notes oldest to newest, at an increasing markup
