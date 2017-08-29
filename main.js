@@ -57,6 +57,8 @@ function monthDiff(d1, d2) {
   return months <= 0 ? 0 : months;
 }
 
+// NOTE: to sort of 'scale' the YTM and normalize Markup just
+// return 12 as the months left; (or a constant number of choice)
 function calcRemainingPayments(loanLength, dateIssued) {
   const now = new Date();
   const expiration = addMonthsUTC(dateIssued, loanLength);
@@ -127,7 +129,7 @@ function calcYield(params) {
     return m - calcMonthlyPayment(pr, n, r);
   };
   const fprime = function(r) {
-    const h = 0.0001; // almost forgot the h again..
+    const h = 0.000001; // almost forgot the h again..
     return (f(r + h, m, pr, n) - f(r, m, pr, n)) / h;
   };
 
@@ -169,7 +171,7 @@ function calcOptimalMarkup(theNote, initialMarkup, acceptableYTM) {
   };
 
   const gprime = function(markup) {
-    const h = 0.0001; // almost forgot the h again..
+    const h = 0.000001; // almost forgot the h again..
     const delta = (g(markup + h) - g(markup)) / h;
     // console.log('g` : ' + delta);
     return delta;
@@ -239,7 +241,7 @@ class NoteCollection {
 
 function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
   function calcOptimalAskPrice(theNote) {
-    const initialMarkup = 0.005; // initial parameter for calculation
+    const initialMarkup = 0.0001; // initial parameter for calculation
     const markup = calcOptimalMarkup(theNote, initialMarkup, acceptableYTM);
     if (markup && markup > acceptableMarkup) {
       return calcAskPrice(theNote, markup);
@@ -281,7 +283,7 @@ function makeTable(theNotes, acceptableYTM) {
   });
 
   theNotes.forEach((note) => {
-    const initialMarkup = 0.005;   // initial parameter for calculation
+    const initialMarkup = 0.0001;   // initial parameter for calculation
     const remainingPayments = calcRemainingPayments(
         note.loanLength, new Date(note.issueDate));
     const monthlyPayment = calcMonthlyPayment(
@@ -390,7 +392,7 @@ class Client {
   // Use this sparingly
   sellNoteAtMarkup(theNote, markup) {
     // console.log('Selling note: ' + theNote.noteId + ' at markup: ' + markup);
-    if (markup < 0.0001 || markup >= 0.70) {
+    if (markup < (-0.02) || markup >= 0.70) {
       throw Error('Sale was attempted on note: ' + theNote.noteId +
         ' at invalid markup: ' + markup);
     }
@@ -421,7 +423,9 @@ class Client {
         console.log('Filtering from %d notes...', notes.length);
         const filteredNotes = filterSellableNotes(notes, acceptableYTM, acceptableMarkup);
         console.log('Selling %d notes...', filteredNotes.length);
-        console.log(' > at ytm=%d, markup=%d', acceptableYTM, acceptableMarkup);
+        console.log(' > at ytm=%d, markup=%d',
+                    roundNumber(acceptableYTM, 3),
+                    roundNumber(acceptableMarkup, 3));
         // let table = makeTable(filteredNotes, acceptableYTM);
         // console.log(table.toString());
         let foliofnSellNotes = convertNotesToFolioSellSchema(filteredNotes);
@@ -511,15 +515,16 @@ const sellPollHandler = () => {
     //   Partially Funded
     //}
     console.log('Notes: ' + notes.length);
+    console.log('YTM: ' + minYTM + '. Mrk: ' + minMrk);
 
     // sell notes oldest to newest, at an increasing markup
-    const monthsIssued = [1, 4, 8];
+    const monthsIssued = [7, 20];
     let promises = [];
-    for (var i = 2; i >= 0; --i) {
+    for (var i = (monthsIssued.length-1); i >= 0; --i) {
       notes = nc.byMonthsIssued(monthsIssued[i]);
       let p = client.sellNotesAtOptimalMarkup(notes,
-          minYTM-(i*0.0080),
-          minMrk-(i*0.0030))
+          minYTM+(i*0.0405),
+          minMrk-(i*0.0050))
         .catch((err) => {});
       promises.push(p);
       nc = new NoteCollection(nc.difference(notes));
