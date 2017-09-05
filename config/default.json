@@ -7,6 +7,8 @@
   "transaction":
   {
     "acceptableYTM": 0.1595,
-    "acceptableMarkup": 0.0115
+    "acceptableMarkup": 0.0115,
+    "maximumMarkup": 0.0465,
+    "graduated": true
   }
 }

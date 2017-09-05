@@ -238,12 +238,12 @@ class NoteCollection {
   }
 }
 
-
-function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
+function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup,
+                             maximumMarkup) {
   function calcOptimalAskPrice(theNote) {
-    const initialMarkup = 0.0001; // initial parameter for calculation
+    const initialMarkup = 0.00001; // initial parameter for calculation
     const markup = calcOptimalMarkup(theNote, initialMarkup, acceptableYTM);
-    if (markup && markup > acceptableMarkup) {
+    if (markup && markup >= acceptableMarkup && markup <= maximumMarkup) {
       return calcAskPrice(theNote, markup);
     }
     throw Error(
@@ -254,9 +254,12 @@ function filterSellableNotes(theNotes, acceptableYTM, acceptableMarkup) {
   function isNoteSellable(theNote) {
     try {
       // (1) asking price must exist for note
+      // If trying to at LEAST break even or better:
       // (2) must at least be greater than principle remaining
+      // Otherwise doesn not matter
       const askingPrice = calcOptimalAskPrice(theNote);
-      return askingPrice >= theNote.principalPending;
+      // return askingPrice >= theNote.principalPending;
+      return askingPrice > 0;
     } catch (err) {
       return false;
     }
@@ -283,7 +286,7 @@ function makeTable(theNotes, acceptableYTM) {
   });
 
   theNotes.forEach((note) => {
-    const initialMarkup = 0.0001;   // initial parameter for calculation
+    const initialMarkup = 0.00001;   // initial parameter for calculation
     const remainingPayments = calcRemainingPayments(
         note.loanLength, new Date(note.issueDate));
     const monthlyPayment = calcMonthlyPayment(
@@ -330,8 +333,11 @@ function convertNotesToFolioSellSchema(theSellNotes) {
     //             ' at askPrice: $' + roundNumber(askPrice, 2) +
     //             ' markup: ' + markupPercent);
     if (askPrice < theNote.principalPending) {
-      throw Error('Sale was attempted on note: ' + theNote.noteId +
-        ' at invalid askPrice: ' + askPrice);
+      // throw Error('Sale was attempted on note: ' + theNote.noteId +
+      //   ' at invalid askPrice: ' + askPrice);
+      console.log(
+          'Warning: selling note at askPrice lower than pending principal. askPrice=' +
+          askPrice);
     }
     notesToSell.push({
       "loanId"   : theNote.loanId,
@@ -392,7 +398,7 @@ class Client {
   // Use this sparingly
   sellNoteAtMarkup(theNote, markup) {
     // console.log('Selling note: ' + theNote.noteId + ' at markup: ' + markup);
-    if (markup < (-0.02) || markup >= 0.70) {
+    if (markup < (-0.025) || markup >= 0.70) {
       throw Error('Sale was attempted on note: ' + theNote.noteId +
         ' at invalid markup: ' + markup);
     }
@@ -417,11 +423,13 @@ class Client {
     });
   }
 
-  sellNotesAtOptimalMarkup(notes, acceptableYTM, acceptableMarkup) {
+  sellNotesAtOptimalMarkup(notes, acceptableYTM, acceptableMarkup,
+                           maximumMarkup) {
     return new Promise((resolve, reject) => {
       try {
         console.log('Filtering from %d notes...', notes.length);
-        const filteredNotes = filterSellableNotes(notes, acceptableYTM, acceptableMarkup);
+        const filteredNotes = filterSellableNotes(
+            notes, acceptableYTM, acceptableMarkup, maximumMarkup);
         console.log('Selling %d notes...', filteredNotes.length);
         console.log(' > at ytm=%d, markup=%d',
                     roundNumber(acceptableYTM, 3),
@@ -493,8 +501,10 @@ const sellPollHandler = () => {
 
   client.getNotes().then((notes) => {
     let nc = new NoteCollection(notes);
-    const minYTM = config.get('transaction.acceptableYTM');
+    let minYTM = config.get('transaction.acceptableYTM');
     const minMrk = config.get('transaction.acceptableMarkup');
+    const maxMrk = config.get('transaction.maximumMarkup');
+    const graduated = config.get('transaction.graduated'); // affects minYTM, will increment by interval per graduation
     // const theNotes = nc.byPurpose('Credit card refinancing');
     // const theNotes = nc.byLoanStatus('Late (31-120 days)');
     //loanStatus in {
@@ -515,20 +525,46 @@ const sellPollHandler = () => {
     //   Partially Funded
     //}
     console.log('Notes: ' + notes.length);
-    console.log('YTM: ' + minYTM + '. Mrk: ' + minMrk);
+    console.log('YTM: ' + minYTM + '. MinMrk: ' + minMrk +
+                '. MaxMrk: ' + maxMrk);
+    if (graduated)
+    {
+        console.log('Calculating with graduated yield for buyer');
+    }
 
     // sell notes oldest to newest, at an increasing markup
-    const monthsIssued = [7, 20];
+    const monthsIssued = [7];
     let promises = [];
-    for (var i = (monthsIssued.length-1); i >= 0; --i) {
-      notes = nc.byMonthsIssued(monthsIssued[i]);
-      let p = client.sellNotesAtOptimalMarkup(notes,
-          minYTM+(i*0.0405),
-          minMrk-(i*0.0050))
-        .catch((err) => {});
-      promises.push(p);
-      nc = new NoteCollection(nc.difference(notes));
+
+    // If graduations are specified then we are in 'try and try again mode'
+    // If graduations are NOT specified then we are in 'try or fail mode'
+    let graduations = (graduated ? 10 : 1);
+
+    while (graduations--)
+    {
+      for (var i = (monthsIssued.length-1); i >= 0; --i) {
+        notes = nc.byMonthsIssued(monthsIssued[i]);
+        let p = client.sellNotesAtOptimalMarkup(notes,
+            minYTM+(i*0.0405),
+            minMrk-(i*0.0050),
+            maxMrk)
+          .catch((err) => {});
+        promises.push(p);
+        // NOTE: this works for cases we want to 'try to sell or fail'
+        // nc = new NoteCollection(nc.difference(notes));
+        // ALTERNATIVELY: do not update 'nc' if try to sell but keep
+        //     trying (ie: via graduations)
+        //   -> This alternative hinges on the assumption that lending club does
+        //   not allow an order to change via 'sellNotes', but only through
+        //   update order or something
+        // NOTE: if looking to optimize
+        //     the subtraction of notes for updating nc.. make sure to
+        //     chain the promises/waterfall and update sellNotesAtOptimalMarkup
+        //     to return the actual notes filtered and sold
+      }
+      minYTM += 0.0225;
     }
+
     (async () => {
       await Promise.all(promises);
       console.log('Done. Waiting for trigger...');
